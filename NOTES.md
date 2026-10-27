@@ -13,8 +13,8 @@
 | Audit call moved to `afterCommit` | Once `redeem` holds a row lock, a synchronous HTTP call (RestTemplate, no timeout) inside the transaction would hold the lock for every user in that campaign. It also means we no longer audit a redemption that gets rolled back. |
 | Tests: `@Transactional` on `VoucherServiceTest`, `@MockBean AuditClient`, new `VoucherConcurrencyTest` | The existing tests mutated a shared in-memory DB (order-dependent) and made real network calls to `internal-audit.prizm.local` (about 3 s per redeem locally). Added cases: default of 2, limit reached, rejected request doesn't consume stock or voucher, existing `user-99` history counts, limit is per campaign, limit is configurable, and parallel requests. |
 
-### A decision I made that needs confirming
-**Does a voided voucher count toward the limit?** The seed data has `user-99` with two redemptions on campaign 1, one of them later voided. I count **all** redemption rows, so `user-99` is already at the limit. Reasoning: `void` doesn't restore stock or remove the redemption row, and `/stats` still counts it as redeemed, so treating it as "used" is consistent with the rest of the service and is the conservative option for a promotion. If the business wants voids to free up a slot, it is a one-line query change (join to `voucher` and exclude `VOID`). I'd normally email to confirm this before merging.
+### An assumption I made
+**Does a voided voucher count toward the limit?** The seed data has `user-99` with two redemptions on campaign 1, one of them later voided. I count **all** redemption rows, so `user-99` is already at the limit. Reasoning: `void` doesn't restore stock or remove the redemption row, and `/stats` still counts it as redeemed, so treating it as "used" is consistent with the rest of the service and is the conservative option for a promotion. If the business wants voids to free up a slot, it is a one-line query change (join to `voucher` and exclude `VOID`). This is the first thing I'd confirm with the product owner.
 
 ## Noticed but deliberately did not change
 
@@ -32,7 +32,7 @@
 - The audit call fires once per instance that handled the request, with the same fire-and-forget failure handling (lost events on failure, not retried).
 
 ## If I had another day
-1. Confirm the voided-voucher rule above with the business.
+1. Confirm the voided-voucher rule above with the product owner.
 2. Add a machine-readable reason code (e.g. `USER_LIMIT_REACHED`) to `RedeemResponse` alongside the message, so the storefront doesn't have to parse text.
 3. Move the audit to an outbox table + async sender (currently `afterCommit` still runs on the request thread, so a slow audit server still slows the response, just without holding the lock), add timeouts, and move the API key to config.
 4. Watch lock contention on hot flash campaigns: the campaign row lock serialises *all* redemptions in a campaign. If that becomes a bottleneck, use a conditional `UPDATE … SET remaining_stock = remaining_stock - 1 WHERE remaining_stock > 0` plus a per-(campaign, user) counter row with a unique constraint.

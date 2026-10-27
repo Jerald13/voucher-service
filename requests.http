@@ -1,0 +1,24 @@
+### Manual demo requests (VS Code "REST Client" extension or IntelliJ HTTP client: click "Send Request")
+### Start the app first: ./gradlew bootRun --args="--server.port=8081"
+@base = http://localhost:8081
+
+### 1. Stats before
+GET {{base}}/campaigns/1/stats
+
+### 2. user-99 already has 2 redemptions on campaign 1 (one voided) -> rejected by the limit
+POST {{base}}/vouchers/RAYA-0001/redeem?userId=user-99
+
+### 3. A new user: first redeem -> OK
+POST {{base}}/vouchers/RAYA-0001/redeem?userId=user-5
+
+### 4. Second redeem -> OK
+POST {{base}}/vouchers/RAYA-0002/redeem?userId=user-5
+
+### 5. Third redeem -> FAILED, per-user limit reached
+POST {{base}}/vouchers/RAYA-0003/redeem?userId=user-5
+
+### 6. Limit is per campaign: user-99 can still redeem on campaign 2
+POST {{base}}/vouchers/MRDK-0001/redeem?userId=user-99
+
+### 7. Stats after (RAYA-0003 is still ACTIVE: the rejected request consumed nothing)
+GET {{base}}/campaigns/1/stats
