@@ -11,6 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Date;
 
@@ -31,12 +34,18 @@ public class VoucherService {
     @Autowired
     private AuditClient auditClient;
 
+    @Transactional
     public RedeemResponse redeem(String code, String userId) {
 
-        Voucher voucher = voucherRepository.findByCode(code);
-        if (voucher == null) {
+        Long campaignId = voucherRepository.findCampaignIdByCode(code);
+        if (campaignId == null) {
             return RedeemResponse.fail("Voucher not found");
         }
+
+        // Lock first, then read: the status, stock and per-user count below are only
+        // trustworthy while we hold the campaign row lock (released on commit).
+        Campaign campaign = campaignRepository.findByIdForUpdate(campaignId).get();
+        Voucher voucher = voucherRepository.findByCode(code);
 
         if ("REDEEMED".equals(voucher.getStatus())) {
             return RedeemResponse.fail("Voucher already redeemed");
@@ -45,8 +54,6 @@ public class VoucherService {
         if ("VOID".equals(voucher.getStatus())) {
             return RedeemResponse.fail("Voucher is void");
         }
-
-        Campaign campaign = campaignRepository.findById(voucher.getCampaignId()).get();
 
         if (!campaign.isActive()) {
             return RedeemResponse.fail("Campaign is not active");
@@ -76,11 +83,19 @@ public class VoucherService {
                 voucher.getId(), campaign.getId(), userId, new Date());
         redemptionRepository.save(redemption);
 
-        try {
-            auditClient.recordRedemption(campaign.getClientCode(), voucher.getCode(), userId);
-        } catch (Exception e) {
-            log.error("audit call failed");
-        }
+        // Audit only after commit: never hold the campaign lock across a remote call,
+        // and never audit a redemption that ends up rolled back.
+        String clientCode = campaign.getClientCode();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    auditClient.recordRedemption(clientCode, code, userId);
+                } catch (Exception e) {
+                    log.error("audit call failed");
+                }
+            }
+        });
 
         return RedeemResponse.ok(voucher.getCode(), campaign.getRemainingStock());
     }
