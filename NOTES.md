@@ -40,16 +40,14 @@
 
 ## Reflection
 
-> ✏️ Draft — rewrite in your own words before submitting.
-
 **What did you get wrong first, and how did you notice?**
 The first implementation was a plain "count, then insert" check. The single-threaded tests passed, so it looked done. I wrote a test that sends 4 redeems for one user in parallel, and all 4 succeeded against a limit of 2. That made it clear the limit needs a database-level lock (commit `c81cf84` → `5e64c44`).
 
 **Which AI suggestion did you reject, and why?**
-_TODO — fill in from the conversation log. Candidate: making `redeem` `synchronized` (or using an in-memory lock) would pass the concurrency test but only works inside one JVM, so it fails the "3 instances" scenario. Only claim this if it's actually what happened._
+The AI suggested emailing you to clarify whether a voided voucher should count toward the limit, and to hold off until it was confirmed. I didn't. The question is real, but it isn't blocking: either answer is a one-line change to the count query. So I made a decision, kept it consistent with how the rest of the service already treats voids (no stock restored, still counted in `/stats`), and wrote it down as an assumption above instead of waiting on a reply.
 
 **What took you longest?**
-_TODO — e.g. getting the environment running (Gradle wrapper, `gradlew.bat` rename, port 8080 already in use on my machine), or understanding JPA locking / why the voucher has to be read after the lock._
+Understanding the concurrency fix. I hadn't run Spring Boot before, and the setup was quick: JDK 17 was already installed, the Gradle wrapper handled the rest, and the only hiccup was port 8080 already being in use on my machine. The slow part was understanding why the count check alone isn't enough. That meant understanding what `@Transactional` and `SELECT … FOR UPDATE` actually do, why a `synchronized` lock wouldn't survive multiple instances, and why the voucher has to be read *after* taking the lock (Hibernate would otherwise hand back a cached, stale status).
 
 ## AI usage
 I used Claude Code throughout; the raw exported session is in `ai-log/`.
