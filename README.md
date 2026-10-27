@@ -30,6 +30,13 @@ Campaign 3 (`ACME`) — inactive, no stock
 
 `user-99` already has redemption history on campaign 1.
 
+## Per-user redemption limit
+
+Each campaign has `max_redemptions_per_user` (default `2`). Redeeming beyond it returns
+`{"result":"FAILED","message":"Per-user redemption limit reached: ..."}`. See `NOTES.md`.
+
+Port 8080 busy? `./gradlew bootRun --args="--server.port=8081"`
+
 ## Tests
 
 ```
