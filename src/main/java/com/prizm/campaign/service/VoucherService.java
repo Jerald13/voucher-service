@@ -56,6 +56,14 @@ public class VoucherService {
             return RedeemResponse.fail("Campaign out of stock");
         }
 
+        // Every redemption row counts, including vouchers voided afterwards: void does not
+        // restore stock or delete the redemption either, so a void does not give the slot back.
+        long userRedemptions = redemptionRepository.countByCampaignIdAndUserId(campaign.getId(), userId);
+        if (userRedemptions >= campaign.getMaxRedemptionsPerUser()) {
+            return RedeemResponse.fail("Per-user redemption limit reached: max "
+                    + campaign.getMaxRedemptionsPerUser() + " voucher(s) per user for this campaign");
+        }
+
         voucher.setStatus("REDEEMED");
         voucher.setRedeemedBy(userId);
         voucher.setRedeemedAt(new Date());
